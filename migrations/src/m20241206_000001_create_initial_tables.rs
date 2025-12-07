@@ -25,7 +25,7 @@ impl MigrationTrait for Migration {
 
             CREATE TABLE discord_users (
                 id          SERIAL PRIMARY KEY,
-                discord_id  TEXT NOT NULL,
+                discord_id  TEXT NOT NULL UNIQUE,
                 nickname    TEXT NOT NULL,
                 avatar_url  TEXT,
                 is_verified BOOLEAN,
@@ -36,7 +36,7 @@ impl MigrationTrait for Migration {
 
             CREATE TABLE google_users (
                 id                 SERIAL PRIMARY KEY,
-                google_id          TEXT NOT NULL,
+                google_id          TEXT NOT NULL UNIQUE,
                 email              TEXT NOT NULL,
                 email_verified     BOOLEAN,
                 first_name         TEXT,
@@ -98,33 +98,39 @@ impl MigrationTrait for Migration {
 
             -- FOREIGN KEYS
 
-            ALTER TABLE discord_users
-                ADD CONSTRAINT fk_discord_users_users
-                FOREIGN KEY (discord_id) REFERENCES users (discord_id);
-
-            ALTER TABLE google_users
-                ADD CONSTRAINT fk_google_users_users
-                FOREIGN KEY (google_id) REFERENCES users (google_id);
-
+            ALTER TABLE users
+                ADD CONSTRAINT fk_users_discord_id
+                FOREIGN KEY (discord_id) REFERENCES discord_users (discord_id);
+            ALTER TABLE users
+                ADD CONSTRAINT fk_users_google_id
+                FOREIGN KEY (google_id) REFERENCES google_users (google_id);
             ALTER TABLE events
-                ADD CONSTRAINT fk_events_organizers
+                ADD CONSTRAINT fk_events_organizer_id
                 FOREIGN KEY (organizer_id) REFERENCES organizers (id);
+            ALTER TABLE user_subscriptions
+                ADD CONSTRAINT fk_user_subscriptions_user_id
+                FOREIGN KEY (user_id) REFERENCES users (id);
+            ALTER TABLE user_subscription_notifications
+                ADD CONSTRAINT fk_user_subscription_notifications_user_subscription_id
+                FOREIGN KEY (user_subscription_id) REFERENCES user_subscriptions (id);
+            ALTER TABLE user_subscription_notifications
+                ADD CONSTRAINT fk_user_subscription_notifications_event_id
+                FOREIGN KEY (event_id) REFERENCES events (id);
 
+            -- UNIQUE CONSTRAINTS
+
+            ALTER TABLE discord_users
+                ADD CONSTRAINT uk_discord_users_discord_id
+                UNIQUE (discord_id);
+            ALTER TABLE google_users
+                ADD CONSTRAINT uk_google_users_google_id
+                UNIQUE (google_id);
             ALTER TABLE events
-                ADD CONSTRAINT fk_events_guid
+                ADD CONSTRAINT uk_events_guid
                 UNIQUE (guid);
 
-            ALTER TABLE user_subscriptions
-                ADD CONSTRAINT fk_user_subscriptions_users
-                FOREIGN KEY (user_id) REFERENCES users (id);
-
-            ALTER TABLE user_subscription_notifications
-                ADD CONSTRAINT fk_user_subscription_notifications_user_subscriptions
-                FOREIGN KEY (user_subscription_id) REFERENCES user_subscriptions (id);
-
-            ALTER TABLE user_subscription_notifications
-                ADD CONSTRAINT fk_user_subscription_notifications_events
-                FOREIGN KEY (event_id) REFERENCES events (id);
+            CREATE UNIQUE INDEX idx_user_subscription_notifications_subscription_id_event_id
+                ON user_subscription_notifications (user_subscription_id, event_id);
         "#,
         )
         .await?;
@@ -141,9 +147,9 @@ impl MigrationTrait for Migration {
             DROP TABLE IF EXISTS user_subscriptions;
             DROP TABLE IF EXISTS events;
             DROP TABLE IF EXISTS organizers;
+            DROP TABLE IF EXISTS users;
             DROP TABLE IF EXISTS google_users;
             DROP TABLE IF EXISTS discord_users;
-            DROP TABLE IF EXISTS users;
         "#,
         )
         .await?;

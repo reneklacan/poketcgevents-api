@@ -3,13 +3,6 @@ use sea_query::OnConflict;
 
 use crate::entities::events;
 
-pub async fn all(db: &DatabaseConnection) -> Result<Vec<events::Model>, anyhow::Error> {
-    events::Entity::find()
-        .all(db)
-        .await
-        .map_err(anyhow::Error::from)
-}
-
 pub async fn upsert(
     db: &DatabaseConnection,
     models: Vec<events::ActiveModel>,
