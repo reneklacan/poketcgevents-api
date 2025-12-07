@@ -2,12 +2,15 @@ use anyhow::{Context, anyhow};
 use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
 use csv::ReaderBuilder;
 use sea_orm::{Database, DatabaseConnection, Set};
-use std::{collections::HashMap, mem, path::Path};
+use std::{collections::HashMap, mem, path::Path, str::FromStr};
 use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{
-    entities::{events, organizers},
+    entities::{
+        events::{self, EventKind},
+        organizers,
+    },
     persistence::{events_repository, organizers_repository},
 };
 
@@ -115,7 +118,7 @@ pub async fn call() -> Result<(), anyhow::Error> {
             guid,
             happening_at,
             now,
-        ));
+        )?);
 
         if event_models.len() >= 100 {
             let chunk = mem::take(&mut event_models);
@@ -146,13 +149,13 @@ fn build_event_model(
     guid: Uuid,
     happening_at: DateTime<FixedOffset>,
     now: DateTime<FixedOffset>,
-) -> events::ActiveModel {
+) -> Result<events::ActiveModel, anyhow::Error> {
     let league = parse_optional_i32(&record.league);
 
-    events::ActiveModel {
+    Ok(events::ActiveModel {
         id: Default::default(),
         organizer_id: Set(organizer_id),
-        kind: Set(record.kind.trim().to_string()),
+        kind: Set(EventKind::from_str(&record.kind.trim())?),
         name: Set(record.name.trim().to_string()),
         pokemon_event_slug: Set(record.pokemon_event_slug.trim().to_string()),
         guid: Set(guid),
@@ -160,7 +163,7 @@ fn build_event_model(
         happening_at: Set(happening_at),
         created_at: Set(now),
         updated_at: Set(now),
-    }
+    })
 }
 
 async fn ensure_organizer(

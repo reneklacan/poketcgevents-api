@@ -1,6 +1,6 @@
-use std::time::Duration;
-
+use migrations::MigratorTrait;
 use sea_orm::{ConnectOptions, Database, DatabaseConnection};
+use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct Connections {
@@ -38,4 +38,10 @@ pub async fn db_connection() -> Result<DatabaseConnection, anyhow::Error> {
     let db = Database::connect(connect_options).await?;
 
     Ok(db)
+}
+
+pub async fn migrate() -> Result<(), anyhow::Error> {
+    let db = db_connection().await?;
+    migrations::Migrator::up(&db, None).await?;
+    Ok(())
 }
