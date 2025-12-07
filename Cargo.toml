@@ -1,0 +1,52 @@
+[package]
+name = "poketcgevents-api"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+members = ["migrations"]
+
+[workspace.dependencies]
+migrations = { path = "migrations" }
+tokio = { version = "1.41", features = ["full"] }
+sea-orm-migration = { version = "2.0.0-rc.20", features = [
+    "runtime-tokio-rustls",
+    "sqlx-postgres",
+] }
+
+[dependencies]
+anyhow = "^1.0"
+sea-orm = { version = "2.0.0-rc", features = [
+    "sqlx-postgres",
+    "runtime-tokio-rustls",
+    "with-json",
+    "with-chrono",
+    "with-rust_decimal",
+    "with-bigdecimal",
+    "with-uuid",
+
+    "macros",
+] }
+chrono = { version = "^0.4", features = ["serde"] }
+dotenvy = "^0.15"
+axum = "^0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+utoipa = { version = "^5.3", features = [
+    "axum_extras",
+    "chrono",
+    "indexmap",
+    "preserve_order",
+    "uuid",
+] }
+rand = "^0.9"
+itertools = "^0.14"
+serde = { version = "^1.0", features = ["derive"] }
+serde_json = { version = "^1.0", features = ["preserve_order"] }
+sea-orm-typed-id = { version = "^0.4", features = ["rustls", "postgres"] }
+thiserror = "^2.0"
+tokio = { workspace = true }
+url = "2.5"
+utoipa-swagger-ui = { version = "^9.0", features = ["axum"] }
+uuid = { version = "^1.18", features = ["serde", "v4"] }
+csv = "1.3"
