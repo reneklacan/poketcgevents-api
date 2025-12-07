@@ -24,6 +24,8 @@ pub struct Model {
     pub latitude: f64,
     #[sea_orm(column_type = "Double", nullable)]
     pub longitude: f64,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub timezone: String,
     pub created_at: DateTime<FixedOffset>,
     pub updated_at: DateTime<FixedOffset>,
     #[sea_orm(has_many)]

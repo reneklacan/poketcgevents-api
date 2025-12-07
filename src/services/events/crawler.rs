@@ -1,9 +1,11 @@
 use anyhow::{Context, anyhow};
-use chrono::{DateTime, FixedOffset, NaiveDateTime, Utc};
+use chrono::{DateTime, FixedOffset, LocalResult, NaiveDateTime, TimeZone, Utc};
+use chrono_tz::Tz;
 use csv::ReaderBuilder;
 use sea_orm::{Database, DatabaseConnection, Set};
 use std::{collections::HashMap, mem, path::Path, str::FromStr};
 use tracing::{info, warn};
+use tzf_rs::DefaultFinder;
 use uuid::Uuid;
 
 use crate::{
@@ -54,6 +56,7 @@ struct OrganizerValues {
     country: String,
     latitude: f64,
     longitude: f64,
+    timezone: String,
 }
 
 pub async fn call() -> Result<(), anyhow::Error> {
@@ -64,6 +67,7 @@ pub async fn call() -> Result<(), anyhow::Error> {
 
     let offset = FixedOffset::east_opt(0).ok_or_else(|| anyhow!("failed to build UTC offset"))?;
     let now = Utc::now().with_timezone(&offset);
+    let timezone_finder = DefaultFinder::new();
 
     let events_path = Path::new("data/events.csv");
     let mut reader = ReaderBuilder::new()
@@ -84,7 +88,41 @@ pub async fn call() -> Result<(), anyhow::Error> {
             }
         };
 
-        let organizer_id = match ensure_organizer(&db, &mut organizer_cache, &record, now).await {
+        let latitude = match parse_f64(&record.latitude) {
+            Some(lat) => lat,
+            None => {
+                warn!(
+                    latitude = %record.latitude,
+                    "skipping row due to invalid latitude"
+                );
+                continue;
+            }
+        };
+
+        let longitude = match parse_f64(&record.longitude) {
+            Some(lon) => lon,
+            None => {
+                warn!(
+                    longitude = %record.longitude,
+                    "skipping row due to invalid longitude"
+                );
+                continue;
+            }
+        };
+
+        let timezone_name = timezone_finder.get_tz_name(longitude, latitude);
+
+        let organizer_id = match ensure_organizer(
+            &db,
+            &mut organizer_cache,
+            &record,
+            latitude,
+            longitude,
+            timezone_name,
+            now,
+        )
+        .await
+        {
             Ok(id) => id,
             Err(err) => {
                 warn!(error = %err, "skipping row due to organizer error");
@@ -92,17 +130,18 @@ pub async fn call() -> Result<(), anyhow::Error> {
             }
         };
 
-        let happening_at = match parse_datetime(&record.happening_at, offset) {
-            Ok(dt) => dt,
-            Err(err) => {
-                warn!(
-                    error = %err,
-                    when = %record.happening_at,
-                    "skipping row due to invalid datetime"
-                );
-                continue;
-            }
-        };
+        let happening_at =
+            match parse_datetime_in_timezone(&record.happening_at, timezone_name, offset) {
+                Ok(dt) => dt,
+                Err(err) => {
+                    warn!(
+                        error = %err,
+                        when = %record.happening_at,
+                        "skipping row due to invalid datetime"
+                    );
+                    continue;
+                }
+            };
 
         let guid = match Uuid::parse_str(record.guid.trim()) {
             Ok(g) => g,
@@ -170,9 +209,12 @@ async fn ensure_organizer(
     db: &DatabaseConnection,
     cache: &mut HashMap<OrganizerKey, organizers::Model>,
     record: &EventCsvRecord,
+    latitude: f64,
+    longitude: f64,
+    timezone_name: &str,
     now: DateTime<FixedOffset>,
 ) -> Result<i32, anyhow::Error> {
-    let values = organizer_values_from_record(record);
+    let values = organizer_values_from_record(record, latitude, longitude, timezone_name);
     let key = build_organizer_key(&values);
 
     if let Some(existing) = cache.get(&key) {
@@ -188,6 +230,7 @@ async fn ensure_organizer(
         country: Set(values.country.clone()),
         latitude: Set(values.latitude),
         longitude: Set(values.longitude),
+        timezone: Set(values.timezone.clone()),
         created_at: Set(now),
         updated_at: Set(now),
     };
@@ -211,15 +254,21 @@ fn build_organizer_key(values: &OrganizerValues) -> OrganizerKey {
     }
 }
 
-fn organizer_values_from_record(record: &EventCsvRecord) -> OrganizerValues {
+fn organizer_values_from_record(
+    record: &EventCsvRecord,
+    latitude: f64,
+    longitude: f64,
+    timezone_name: &str,
+) -> OrganizerValues {
     OrganizerValues {
         name: normalize(&record.shop, "Unknown organizer"),
         address: normalize(&record.street_address, "Unknown address"),
         city: normalize(&record.city, "Unknown city"),
         area: normalize(&record.state, "Unknown area"),
         country: normalize(&record.country_code, "XX"),
-        latitude: parse_f64(&record.latitude).unwrap_or(0.0),
-        longitude: parse_f64(&record.longitude).unwrap_or(0.0),
+        latitude,
+        longitude,
+        timezone: timezone_name.to_string(),
     }
 }
 
@@ -232,6 +281,7 @@ fn organizer_values_from_model(model: &organizers::Model) -> OrganizerValues {
         country: model.country.clone(),
         latitude: model.latitude,
         longitude: model.longitude,
+        timezone: model.timezone.clone(),
     }
 }
 
@@ -251,17 +301,38 @@ fn parse_optional_i32(value: &str) -> Option<i32> {
     trimmed.parse::<i32>().ok()
 }
 
-fn parse_datetime(
+fn parse_datetime_in_timezone(
     value: &str,
-    offset: FixedOffset,
+    timezone_name: &str,
+    utc_offset: FixedOffset,
 ) -> Result<DateTime<FixedOffset>, anyhow::Error> {
     let trimmed = value.trim();
     let naive = NaiveDateTime::parse_from_str(trimmed, "%Y-%m-%d %H:%M:%S")
         .with_context(|| format!("invalid datetime format: {trimmed}"))?;
 
-    Ok(DateTime::<FixedOffset>::from_naive_utc_and_offset(
-        naive, offset,
-    ))
+    let tz: Tz = timezone_name
+        .parse()
+        .with_context(|| format!("failed to parse timezone: {timezone_name}"))?;
+
+    let localized = match tz.from_local_datetime(&naive) {
+        LocalResult::Single(dt) => dt,
+        LocalResult::Ambiguous(first, _) => {
+            warn!(
+                timezone = timezone_name,
+                "ambiguous local time, choosing earliest occurrence"
+            );
+            first
+        }
+        LocalResult::None => {
+            return Err(anyhow!(
+                "nonexistent local time {trimmed} in timezone {timezone_name}"
+            ));
+        }
+    };
+
+    let utc = localized.with_timezone(&Utc);
+
+    Ok(utc.with_timezone(&utc_offset))
 }
 
 fn normalize(value: &str, fallback: &str) -> String {
