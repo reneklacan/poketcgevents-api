@@ -1,5 +1,5 @@
 use chrono::{DateTime, FixedOffset};
-use sea_orm::{ActiveValue, IntoActiveValue, entity::prelude::*};
+use sea_orm::{entity::prelude::*, *};
 // use sea_orm_typed_id::define_id;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumString;
@@ -15,11 +15,11 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
     pub organizer_id: i32,
-    // #[sea_orm(column_type = "Text", nullable)]
-    pub kind: EventKind,
-    #[sea_orm(column_type = "Text", nullable)]
+    #[sea_orm(column_type = "Text")]
+    pub kind: String,
+    #[sea_orm(column_type = "Text")]
     pub name: String,
-    #[sea_orm(column_type = "Text", nullable)]
+    #[sea_orm(column_type = "Text")]
     pub pokemon_event_slug: String,
     #[sea_orm(unique)]
     pub guid: Uuid,
@@ -45,18 +45,8 @@ pub struct Model {
 
 impl ActiveModelBehavior for ActiveModel {}
 
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    Clone,
-    EnumIter,
-    ToSchema,
-    EnumString,
-    FromJsonQueryResult,
-)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize, Clone, EnumIter, ToSchema, EnumString)]
+
 pub enum EventKind {
     #[strum(serialize = "League Challenge VG")]
     #[serde(rename = "League Challenge VG")]
@@ -84,6 +74,12 @@ pub enum EventKind {
     Other(String),
 }
 
+impl Into<Value> for EventKind {
+    fn into(self) -> Value {
+        self.to_value().into()
+    }
+}
+
 impl IntoActiveValue<EventKind> for EventKind {
     fn into_active_value(self) -> ActiveValue<EventKind> {
         ActiveValue::Set(self)
@@ -91,16 +87,13 @@ impl IntoActiveValue<EventKind> for EventKind {
 }
 
 impl ActiveEnum for EventKind {
-    // The macro attribute `rs_type` is being pasted here
     type Value = String;
     type ValueVec = Vec<String>;
 
-    // By default, the name of Rust enum in camel case if `enum_name` was not provided explicitly
     fn name() -> DynIden {
         "EventKind".to_string().into()
     }
 
-    // Map Rust enum variants to corresponding `num_value` or `string_value`
     fn to_value(&self) -> Self::Value {
         match self {
             Self::LeagueChallengeVG => "League Challenge VG",
@@ -115,7 +108,6 @@ impl ActiveEnum for EventKind {
         .to_owned()
     }
 
-    // Map `num_value` or `string_value` to corresponding Rust enum variants
     fn try_from_value(v: &Self::Value) -> Result<Self, DbErr> {
         match v.as_ref() {
             "League Challenge VG" => Ok(Self::LeagueChallengeVG),
@@ -129,7 +121,6 @@ impl ActiveEnum for EventKind {
         }
     }
 
-    // The macro attribute `db_type` is being pasted here
     fn db_type() -> ColumnDef {
         ColumnType::String(StringLen::None).def()
     }

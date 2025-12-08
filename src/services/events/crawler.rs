@@ -3,16 +3,13 @@ use chrono::{DateTime, FixedOffset, LocalResult, NaiveDateTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use csv::ReaderBuilder;
 use sea_orm::{Database, DatabaseConnection, Set};
-use std::{collections::HashMap, mem, path::Path, str::FromStr};
+use std::{collections::HashMap, mem, path::Path};
 use tracing::{info, warn};
 use tzf_rs::DefaultFinder;
 use uuid::Uuid;
 
 use crate::{
-    entities::{
-        events::{self, EventKind},
-        organizers,
-    },
+    entities::{events, organizers},
     persistence::{events_repository, organizers_repository},
 };
 
@@ -194,7 +191,7 @@ fn build_event_model(
     Ok(events::ActiveModel {
         id: Default::default(),
         organizer_id: Set(organizer_id),
-        kind: Set(EventKind::from_str(&record.kind.trim())?),
+        kind: Set(record.kind.trim().to_string()),
         name: Set(record.name.trim().to_string()),
         pokemon_event_slug: Set(record.pokemon_event_slug.trim().to_string()),
         guid: Set(guid),

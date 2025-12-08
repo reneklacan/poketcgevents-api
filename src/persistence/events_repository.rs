@@ -11,6 +11,7 @@ pub async fn upsert(
         .update_columns(vec![
             events::Column::Name,
             events::Column::PokemonEventSlug,
+            events::Column::Kind,
             events::Column::League,
             events::Column::HappeningAt,
             events::Column::UpdatedAt,
